@@ -436,7 +436,9 @@ export class SpendingService {
     const hwOutputs: HwOutput[] = txOutputs.map(output => {
       const hwOutput: HwOutput = {
         address: output.address,
-        coins: new BigNumber(output.coins).multipliedBy(this.coinsMultiplier).toFixed(0),
+        // The daemon reads coins as a decimal amount (droplet.FromString in
+        // hardware-wallet-daemon src/api/transaction_sign.go), not droplets.
+        coins: new BigNumber(output.coins).toFixed(),
         hours: output.hours.toString(),
       };
 

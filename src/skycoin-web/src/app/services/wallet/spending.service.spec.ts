@@ -47,7 +47,7 @@ describe('SpendingService', () => {
         },
         {
           provide: CipherProvider,
-          useValue: jasmine.createSpyObj('CipherProvider', ['generateAddress', 'prepareTransaction'])
+          useValue: jasmine.createSpyObj('CipherProvider', ['generateAddress', 'prepareTransaction', 'prepareTransactionWithSignatures'])
         },
         {
           provide: TranslateService,
@@ -699,6 +699,41 @@ describe('SpendingService', () => {
       send();
       const signCall = post.calls.all().find(c => c.args[0] === 'wallet/transaction/sign')!;
       expect(signCall.args[1].password).toBe('');
+    }));
+  });
+
+  describe('createTransaction on a hardware wallet', () => {
+    it('gives the daemon decimal coins and the cipher droplets', fakeAsync(() => {
+      (TestBed.inject(GlobalsService) as any as MockGlobalsService).setNodeVersion('0.27.0');
+      (spyApiService as any).post = jasmine.createSpy('post').and.returnValue(of({ data: {
+        encoded_transaction: 'unsigned',
+        transaction: {
+          fee: '1',
+          inputs: [{ uxid: 'hash1', address: 'address1', calculated_hours: '2', coins: '5' }],
+          outputs: [{ address: 'dest', coins: '1.5', hours: '1' }, { address: 'address1', coins: '3.5', hours: '0' }],
+        },
+      } }));
+      const hw = TestBed.inject(HwWalletService) as any;
+      spyOn(hw, 'signTransaction').and.returnValue(of({ rawResponse: ['sig'] }));
+      spyCipherProvider.prepareTransactionWithSignatures.and.returnValue(of('signed'));
+      const wallet = Object.assign(createWallet(), { isHardware: true, addresses: [createAddress('address1', '')] });
+
+      let encoded = '';
+      spendingService.createTransaction(
+        wallet, null, null,
+        [{ address: 'dest', coins: new BigNumber(1.5) }],
+        { type: HoursSelectionTypes.Auto, ShareFactor: new BigNumber(0.5) },
+        null,
+      ).subscribe(tx => encoded = (tx as PreviewTransaction).encoded);
+      flushMicrotasks();
+
+      expect(encoded).toBe('signed');
+      expect(hw.signTransaction).toHaveBeenCalledWith(
+        [{ hash: 'hash1', index: 0 }],
+        [{ address: 'dest', coins: '1.5', hours: '1' }, { address: 'address1', coins: '3.5', hours: '0', address_index: 0 }],
+      );
+      const outputs = spyCipherProvider.prepareTransactionWithSignatures.calls.mostRecent().args[1];
+      expect(outputs.map(o => o.coins)).toEqual([1500000, 3500000]);
     }));
   });
 
